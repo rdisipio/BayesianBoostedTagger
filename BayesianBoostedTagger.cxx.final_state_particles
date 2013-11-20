@@ -1,0 +1,406 @@
+// ***************************************************************
+// This file was created using the CreateProject.sh script.
+// CreateProject.sh is part of Bayesian Analysis Toolkit (BAT).
+// BAT can be downloaded from http://www.mppmu.mpg.de/bat
+// ***************************************************************
+
+#include "BayesianBoostedTagger.h"
+#include <BAT/BCSummaryTool.h>
+
+#include "TF1.h"
+
+#include <BAT/BCMath.h>
+
+// ---------------------------------------------------------
+BayesianBoostedTagger::BayesianBoostedTagger() : BCModel(), 
+						 _Nevent(0), _max_E(1*TeV), _max_eta(5.0), 
+						 m_calo(0), m_template(0)
+{
+   // default constructor
+   DefineParameters();
+}
+
+// ---------------------------------------------------------
+BayesianBoostedTagger::BayesianBoostedTagger(const char * name) : BCModel(name), 
+								  _Nevent(0),_max_E(0.6*TeV), _max_eta(2.5), 
+								  m_calo(0), m_template(0)
+{
+   // constructor
+   DefineParameters();
+}
+
+// ---------------------------------------------------------
+BayesianBoostedTagger::~BayesianBoostedTagger()
+   // default destructor
+{
+  if( m_calo ) delete m_calo;
+  if( m_template ) delete m_template;
+  // if( m_pTfunc ) delete m_pTfunc;
+}
+
+// ---------------------------------------------------------
+void BayesianBoostedTagger::SetJet( const fastjet::ClusterSequence & cs,
+				    const fastjet::PseudoJet & jet )
+{
+  _cs  = &cs;
+  _jet = fastjet::PseudoJet( jet );
+}
+
+
+// ---------------------------------------------------------
+void BayesianBoostedTagger::DefineParameters()
+{
+   // Add parameters to your model here.
+   // You can then use them in the methods below by calling the
+   // parameters.at(i) or parameters[i], where i is the index
+   // of the parameter. The indices increase from 0 according to the
+   // order of adding the parameters.
+
+  AddParameter( "b_pt", 20, _max_E );
+  AddParameter( "b_eta", -_max_eta, _max_eta );
+  AddParameter( "b_phi", -3.14, 3.14 );
+
+  AddParameter( "q1_pt", 20, _max_E/2. );
+  AddParameter( "q1_eta", -_max_eta, _max_eta );
+  AddParameter( "q1_phi", -3.14, 3.14 );
+
+  AddParameter( "q2_pt", 20, _max_E/2. );
+  AddParameter( "q2_eta", -_max_eta, _max_eta );
+  AddParameter( "q2_phi", -3.14, 3.14 );
+
+  //TF1 * pTfunc = new TF1( "pTfunc", "exp( -x/100. )", 0, _max_E );
+//  TF1 * pTfunc = new TF1( "pTfunc", "1 - x/1000 ", 0, _max_E );
+  TF1 * pTfunc = new TF1( "pTfunc", "TMath::Landau(x,[0],[1],0)", 0, _max_E );
+//  pTfunc->SetParameters( 50, _max_E/10. );
+  // m_pTfunc->SetParName(0, "tau" );
+
+  //m_pTfunc->SetParameter( 0, _max_E );
+
+  SetPriorConstantAll();
+
+/*
+  SetPriorConstant( 0 );
+  //SetPrior( 0, pTfunc );
+  SetPriorGauss( 1, 0., _max_eta/2. );
+  // SetPriorConstant( 1 );
+  SetPriorConstant( 2 );
+
+  SetPriorConstant( 3 );
+  //SetPrior( 3, pTfunc );
+   SetPriorGauss( 4, 0., _max_eta/2. );
+  //SetPriorConstant( 4 );
+  SetPriorConstant( 5 );
+
+  SetPriorConstant( 6 );
+  //SetPrior( 6, pTfunc );
+  SetPriorGauss( 7, 0., _max_eta/2. );
+  //SetPriorConstant( 7 );
+  SetPriorConstant( 8 );
+ */
+
+  delete pTfunc;
+
+  //   MCMCSetPrecision( BCEngineMCMC::kLow );
+//    MCMCSetPrecision( BCEngineMCMC::kMedium );
+  MCMCSetPrecision( BCEngineMCMC::kHigh );
+
+/*  
+  MCMCSetNChains(10); 
+  MCMCSetNIterationsRun(20000); 
+  MCMCSetNIterationsMax(10000); 
+  MCMCSetNIterationsUpdate(1000);
+ */
+
+/* 
+  MCMCSetNChains(5); 
+  MCMCSetNIterationsRun(500000); 
+  MCMCSetNIterationsMax(500000); 
+  MCMCSetNIterationsUpdate(10000);
+*/
+
+//  const int n_eta_cells = 100;
+//  const int n_phi_cells = 64;
+
+  const int n_eta_cells = 50;
+  const int n_phi_cells = 32;
+
+  m_calo     = new TH2D( "calo",     "Calo",     n_eta_cells, -_max_eta, _max_eta, n_phi_cells, -3.14, 3.14 );
+  m_template = new TH2D( "template", "Template", n_eta_cells, -_max_eta, _max_eta, n_phi_cells, -3.14, 3.14 );
+}
+
+// ---------------------------------------------------------
+void BayesianBoostedTagger::MakeParticles( const vector<double>& parameters )
+{
+  // const double tau = 10.;
+
+  //const double b_pt  = -tau * log( parameters.at(0) );
+  const double b_pt  = parameters.at(0);
+  const double b_eta = parameters.at(1);
+  const double b_phi = parameters.at(2);
+
+  //const double q1_pt  = -tau * log( parameters.at(3) );
+  const double q1_pt  = parameters.at(3);
+  const double q1_eta = parameters.at(4);
+  const double q1_phi = parameters.at(5);
+
+  //const double q2_pt  = -tau * log( parameters.at(6) );
+  const double q2_pt  = parameters.at(6);
+  const double q2_eta = parameters.at(7);
+  const double q2_phi = parameters.at(8);
+
+  _b.SetPtEtaPhiM(   b_pt,  b_eta,  b_phi,  4.5 );
+  _q1.SetPtEtaPhiM( q1_pt, q1_eta, q1_phi, 0. );
+  _q2.SetPtEtaPhiM( q2_pt, q2_eta, q2_phi, 0. );
+
+  _W = _q1 + _q2;
+  _t = _W + _b;
+}
+
+// ---------------------------------------------------------
+double BayesianBoostedTagger::RunTagger( const TH2D& hcalo )
+{
+   m_calo->Reset();
+   m_calo->Add( &hcalo );
+   return RunTagger();
+}
+
+// ---------------------------------------------------------
+double BayesianBoostedTagger::RunTagger( const vector<TLorentzVector>& clusters )
+{
+   const size_t n_cl = clusters.size();
+
+   for( size_t k = 0 ; k < n_cl ; ++k ) {
+    const double eta = clusters.at(k).Eta();
+    const double phi = clusters.at(k).Phi();
+    const double E   = clusters.at(k).E();
+
+    // cout << "cluster " << k << " " << eta << " " << phi << " " << E << endl;
+    m_calo->Fill( eta, phi, E );
+  }
+  
+  return RunTagger(); 
+}
+
+
+// ---------------------------------------------------------
+double BayesianBoostedTagger::RunTagger( const fastjet::PseudoJet & jet )
+{
+  _jet = jet;
+  return RunTagger();
+}
+
+// ---------------------------------------------------------
+double BayesianBoostedTagger::RunTagger()
+{
+  if( m_calo->GetEntries() == 0 ) FillCalo();
+
+  Normalize();
+  MarginalizeAll();
+  FindMode();
+
+//  const vector<double> bfp = GetBestFitParametersMarginalized();
+  const vector<double> bfp = GetBestFitParameters();
+
+//  FindMode( bfp );  
+  //FindModeMinuit( bfp, -1 );
+  MakeParticles( bfp );
+
+  const double lhood = LogLikelihood( bfp );
+
+  BCSummaryTool * summary = new BCSummaryTool( this );
+  char buf[128];
+  sprintf( buf, "bbt_%i_update.ps", _Nevent );
+  summary->PrintKnowledgeUpdatePlots( buf );
+
+  //sprintf( buf, "bbt_%i_correlation.ps", _Nevent );
+  //summary->PrintCorrelationPlot( buf );
+
+  delete summary;
+
+  ++_Nevent;
+
+  return lhood;
+}
+
+// ---------------------------------------------------------
+void BayesianBoostedTagger::FillCalo()
+{
+  m_calo->Reset();
+
+  const vector<fastjet::PseudoJet> jc = _jet.constituents();
+  
+  for( size_t k = 0 ; k < jc.size() ; ++k ) {
+    const double eta = jc.at(k).eta();
+    const double phi = jc.at(k).phi() - 3.14;
+    const double E   = jc.at(k).E();
+
+    // cout << "cluster " << k << " " << eta << " " << phi << " " << E << endl;
+    m_calo->Fill( eta, phi, E );
+  }
+}
+
+// ---------------------------------------------------------
+double BayesianBoostedTagger::LogLikelihood(const std::vector<double> &parameters)
+{
+   // This methods returns the logarithm of the conditional probability
+   // p(data|parameters). This is where you have to define your model.
+
+   double logprob = 0.;
+
+//   double x = parameters.at(0);
+//   double y = parameters.at(1);
+//   double eps = 0.5;
+
+   // Breit-Wigner distribution of x with nuisance parameter y
+//   logprob += BCMath::LogBreitWignerNonRel(x + eps*y, 0.0, 1.0);
+
+   MakeParticles( parameters );
+
+   /*
+   if( _b.E() < 0 ) return -HUGELHOOD;
+   if( _q1.E() < 0 ) return -HUGELHOOD;
+   if( _q2.E() < 0 ) return -HUGELHOOD;
+
+   if( _W.E() < 0 ) return -HUGELHOOD;
+   if( _t.E() < 0 ) return -HUGELHOOD;
+   */
+
+   double dM = 0.;
+   double bw = 0.;
+
+   /*
+   dM = fabs( _t.M() - masst );
+   bw = pow( dM/gammaTop, 2 );
+   if( bw > 10 ) return -HUGELHOOD;
+  
+
+   dM = fabs( _W.M() - massW );
+   bw = pow( dM/gammaW, 2 );
+   if( bw > 10 ) return -HUGELHOOD;
+*/
+
+
+   if( _W.M() < 60 ) return -HUGELHOOD;
+   if( _W.M() > 120 ) return -HUGELHOOD;
+
+   if( _t.M() < 165 ) return -HUGELHOOD;
+   if( _t.M() > 185 ) return -HUGELHOOD;
+
+
+/*
+   double dM = fabs( _t.M() - masst );
+   double bw = pow( dM/gammaTop, 2 );
+   if( bw > 20 ) return HUGELHOOD;
+
+   
+
+   if( _W.E() < 0 ) return HUGELHOOD;
+   if( _t.E() < 0 ) return HUGELHOOD;
+   */
+
+//   logprob += 0.01 * BCMath::LogBreitWignerRel( _W.M(), massW, gammaW );
+//   logprob += 0.01 * BCMath::LogBreitWignerRel( _t.M(), masst, gammaTop );
+
+   vector<TLorentzVector> pv;
+   pv.push_back( _b );
+   pv.push_back( _q1 );
+   pv.push_back( _q2 );
+
+   logprob += LogOverlap( pv ); 
+
+   return logprob;
+}
+
+
+// ---------------------------------------------------------
+/*
+double BayesianBoostedTagger::LogAPrioriProbability(const std::vector<double> &parameters)
+{
+   // This method returns the logarithm of the prior probability for the
+   // parameters p(parameters).
+
+   double logprob = 0.;
+   //  return logprob;
+//   double x = parameters.at(0);
+//   double y = parameters.at(1);
+
+   return logprob;
+}
+*/
+// ---------------------------------------------------------
+
+
+double BayesianBoostedTagger::LogOverlap( const vector<TLorentzVector>& pv ) const
+{
+  double ov = 0;
+
+  const size_t np = pv.size();
+/*
+  m_template->Reset();
+  for( size_t a = 0 ; a < pv.size() ; ++a ) {
+    const TLorentzVector * p = &pv.at(a);
+
+    const double E_a = p->E();
+    const double eta_a = p->Eta();
+    const double phi_a = p->Phi();
+
+    m_template->Fill( eta_a, phi_a, E_a );
+  }
+*/
+  for( size_t a = 0 ; a < pv.size() ; ++a ) {
+    const TLorentzVector * p = &pv.at(a);
+
+    const double eta_a = p->Eta();
+    const double phi_a = p->Phi();
+
+    const int bin_eta_0 = m_template->GetXaxis()->FindBin( eta_a );
+    const int bin_phi_0 = m_template->GetYaxis()->FindBin( phi_a );
+
+//    const double E_p = m_template->GetBinContent( bin_eta_0, bin_phi_0 );
+    const double E_p = p->E();
+//    const double sigma_p = E_p / 5.;
+//   const double sigma_p = 10.;
+    const double sigma_p = E_p * 0.15 * exp( -E_p / 1000. );
+    double E_calo = 0.; 
+
+    int bin_eta = bin_eta_0;
+    int bin_phi = bin_phi_0;
+
+    E_calo = m_calo->Integral( bin_eta-1, bin_eta+1, bin_phi-1, bin_phi+1 );
+/*
+    E_calo += m_calo->GetBinContent( bin_eta,   bin_phi );
+    E_calo += m_calo->GetBinContent( bin_eta+1, bin_phi );
+    E_calo += m_calo->GetBinContent( bin_eta-1, bin_phi );
+
+    // phi+1
+//    bin_phi = ( bin_phi_0 < m_calo->GetYaxis()->GetNbins() ) ? bin_phi_0 + 1 : 1;
+    E_calo += m_calo->GetBinContent( bin_eta,   bin_phi );
+    E_calo += m_calo->GetBinContent( bin_eta+1, bin_phi );
+    E_calo += m_calo->GetBinContent( bin_eta-1, bin_phi );
+
+    // phi-1
+//    bin_phi = ( bin_phi_0 > 1 ) ? bin_phi_0 - 1 : m_calo->GetYaxis()->GetNbins();
+    E_calo += m_calo->GetBinContent( bin_eta,   bin_phi );
+    E_calo += m_calo->GetBinContent( bin_eta+1, bin_phi );
+    E_calo += m_calo->GetBinContent( bin_eta-1, bin_phi );
+*/
+
+/*    
+    for( size_t k = bin_eta-1 ; k <= bin_eta+1 ; ++k ) {
+      for( size_t l = bin_phi-1 ; l <= bin_phi+1 ; ++l ) {
+	E_calo += m_calo->GetBinContent( k, l );
+      }
+    }
+*/
+    
+    // if( dE != 0. ) cout << "parton " << a << " dE = " << dE << " E_p = " << E_p << endl;
+
+    const double dE = E_calo - E_p;
+    ov -= dE*dE / ( 2. * sigma_p*sigma_p );
+
+//      ov += BCMath::LogGaus( E_calo, E_p, sigma_p );
+  }
+  // cout << ov << endl;
+
+  return ov;
+}
