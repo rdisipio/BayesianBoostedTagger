@@ -2,8 +2,7 @@ BayesianBoostedTagger.o: BayesianBoostedTagger.cxx \
  BayesianBoostedTagger.h /home/ATLAS/disipio/local/include/BAT/BCModel.h \
  /home/ATLAS/disipio/local/include/BAT/BCIntegrate.h \
  /home/ATLAS/disipio/local/include/BAT/BCEngineMCMC.h \
- /home/ATLAS/disipio/local/include/BAT/BCParameter.h \
- /home/ATLAS/disipio/local/include/BAT/BCDataPoint.h \
+ /home/ATLAS/disipio/local/include/BAT/BCParameterSet.h \
  /home/ATLAS/disipio/local/include/fastjet/ClusterSequence.hh \
  /home/ATLAS/disipio/local/include/fastjet/internal/DynamicNearestNeighbours.hh \
  /home/ATLAS/disipio/local/include/fastjet/internal/numconsts.hh \

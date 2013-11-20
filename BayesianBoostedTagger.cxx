@@ -437,7 +437,8 @@ double BayesianBoostedTagger::RunTagger()
   
   MarginalizeAll();
   const vector<double> bfp = GetBestFitParameters();
-  FindModeMinuit( bfp, -1 );
+  //FindModeMinuit( bfp, -1 );
+  FindMode( bfp );
   const int status = GetMinuitErrorFlag();
   printf("DEBUG: minuit status %i\n", status );
   const double lhood = LogLikelihood( bfp );
